@@ -17,7 +17,7 @@ type SortOrder = "asc" | "desc";
 export function SalesReportPage() {
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"home" | "sales" | "history" | "profile">("sales");
+  const [activeTab, setActiveTab] = useState<"home" | "sales" | "history" | "profile text-blue-500">("sales");
   
   // Tab state
   const [currentTabType, setCurrentTabType] = useState<TabType>("unpaid");
@@ -142,6 +142,48 @@ export function SalesReportPage() {
     return `PHP ${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }, [filteredAndSortedData]);
 
+  // --- NEW: COMPUTE DATA FOR THE CHART ---
+  const chartData = useMemo(() => {
+    // 1. Ipunin ang mga sales kada araw
+    const grouped = salesData.reduce((acc: any, curr: any) => {
+      // Isama lang sa chart kung nabayaran na o na-claim na
+      if (curr.status !== "paid" && curr.status !== "claimed") return acc;
+
+      const dateStr = curr.date;
+      if (!acc[dateStr]) {
+        acc[dateStr] = { val1: 0, val2: 0, val3: 0 };
+      }
+
+      const amount = Number(curr.amount) || 0;
+      const serviceName = (curr.service || "").toUpperCase();
+
+      // I-distribute sa 3 bars (WASH, DRY, Iba pa/FOLD)
+      if (serviceName === "WASH") {
+        acc[dateStr].val1 += amount;
+      } else if (serviceName === "DRY") {
+        acc[dateStr].val2 += amount;
+      } else {
+        acc[dateStr].val3 += amount; // Dito mapupunta ang FOLD, WASH & DRY, etc.
+      }
+
+      return acc;
+    }, {});
+
+    // 2. I-sort by date (Oldest to Newest) at kunin ang huling 7 days
+    const sortedDates = Object.keys(grouped).sort();
+    return sortedDates.map(date => {
+      const d = new Date(date);
+      const label = isNaN(d.getTime()) ? date : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      
+      return {
+        label,
+        val1: grouped[date].val1,
+        val2: grouped[date].val2,
+        val3: grouped[date].val3
+      };
+    }).slice(-7); // Keep recent 7 records only
+  }, [salesData]);
+
   const handleTabChange = (tab: TabType) => {
     setCurrentTabType(tab);
     handleResetFilters();
@@ -153,59 +195,91 @@ export function SalesReportPage() {
     setShowEntryModal(true);
   };
 
+  // --- DELETE LOGIC ---
   const handleDeleteEntry = async (id: string) => {
     if (window.confirm("Are you sure you want to delete this entry?")) {
       try {
         const response = await fetch(`http://localhost:3000/transactions/${id}`, {
           method: "DELETE",
         });
-        if (!response.ok) throw new Error("Failed to delete");
+
+        if (!response.ok) throw new Error("Failed to delete from database");
+
+        // Sync local state: remove the deleted item
         setSalesData(prev => prev.filter(entry => entry.id !== id));
       } catch (error) {
-        alert("Could not delete entry.");
+        console.error("Delete error:", error);
+        alert("Could not delete the entry. Please try again.");
       }
     }
   };
 
+  // --- SAVE/UPDATE LOGIC ---
   const handleSaveEntry = async (entry: Omit<SalesEntry, "id"> | SalesEntry) => {
+    
+    // 1. UPDATED PAYLOAD TO MATCH YOUR PRISMA SCHEMA
     const payload = {
-      customerName: entry.name,
-      serviceName: entry.service,
-      amount: Number(entry.amount),
-      paymentMethod: entry.paymentMethod || "CASH",
+      customerName: entry.name, 
+      serviceName: entry.service, 
+      amount: Number(entry.amount), 
+      paymentMethod: entry.paymentMethod || "CASH", 
       paymentStatus: entry.status === "paid" || entry.status === "claimed" ? "PAID" : "UNPAID",
-      serviceStatus: entry.status === "claimed" ? "CLAIMED" : "PENDING",
+      serviceStatus: entry.status === "claimed" ? "CLAIMED" : "ON_GOING", 
       transactionDate: entry.date ? new Date(entry.date).toISOString() : new Date().toISOString(),
-      classification: entry.classification || "REGULAR",
-      washDate: entry.washDate ? new Date(entry.washDate).toISOString() : new Date().toISOString(),
     };
 
     try {
       if ("id" in entry) {
+        // UPDATE
         const response = await fetch(`http://localhost:3000/transactions/${entry.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        if (!response.ok) throw new Error("Update failed");
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(Array.isArray(errorData.message) ? errorData.message.join(", ") : errorData.message || "Update failed");
+        }
+
         setSalesData(prev => prev.map(e => e.id === entry.id ? (entry as SalesEntry) : e));
       } else {
+        // CREATE
         const response = await fetch("http://localhost:3000/transactions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        if (!response.ok) throw new Error("Creation failed");
+
+        // 2. EXTRACT EXACT ERROR FROM NESTJS
+        if (!response.ok) {
+          const errorData = await response.json();
+          const errorMessage = Array.isArray(errorData.message) 
+            ? errorData.message.join("\n") 
+            : errorData.message || "Creation failed";
+          
+          throw new Error(errorMessage);
+        }
+        
         const savedRecord = await response.json();
         const newId = String(savedRecord.id || savedRecord.data?.id || Date.now());
-        setSalesData(prev => [...prev, { ...entry, id: newId } as SalesEntry]);
+
+        const newEntry: SalesEntry = {
+          ...entry,
+          id: newId,
+          status: entry.status || currentTabType, 
+        };
+        
+        setSalesData(prev => [...prev, newEntry]);
       }
       setShowEntryModal(false);
-    } catch (error) {
-      alert("Error saving transaction.");
+    } catch (error: any) {
+      console.error("Save error:", error);
+      alert(`Backend Error:\n${error.message}`); 
     }
   };
 
+  // Filter/Sort Helpers
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortOrder(prev => prev === "asc" ? "desc" : "asc");
@@ -217,6 +291,7 @@ export function SalesReportPage() {
   };
 
   const handleApplyFilters = () => setAppliedFilters(filters);
+
   const handleResetFilters = () => {
     const reset = { paymentMethod: "ALL", service: "ALL", dateFrom: "", dateTo: "" };
     setFilters(reset);
@@ -227,6 +302,7 @@ export function SalesReportPage() {
     const headers = currentTabType === "unpaid" 
       ? ["Customer", "Service", "Amount", "Date"] 
       : ["Customer", "Payment", "Service", "Amount", "Date"];
+    
     const rows = filteredAndSortedData.map(e => [
       e.name, 
       currentTabType === "paid" ? e.paymentMethod : e.service, 
@@ -234,6 +310,7 @@ export function SalesReportPage() {
       e.amount.toFixed(2), 
       e.date
     ]);
+
     const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
@@ -252,6 +329,7 @@ export function SalesReportPage() {
     <MobileContainer>
       <div className="bg-[#f5f5f5] relative size-full flex flex-col overflow-x-hidden">
         {isMenuOpen && <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setIsMenuOpen(false)} />}
+        
         <SideMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onLogout={() => navigate("/login")} />
 
         <DashboardHeader 
@@ -268,8 +346,9 @@ export function SalesReportPage() {
             <SegmentedControl activeTab={currentTabType} onTabChange={handleTabChange} />
           </div>
 
+          {/* DITO IPAPASA YUNG COMPUTED DATA SA CHART */}
           <div className="px-6 py-4 bg-white mb-2 mt-2">
-            <DailySalesChart />
+            <DailySalesChart data={chartData} />
           </div>
 
           <div className="px-6 py-3 bg-white mb-2">
@@ -358,6 +437,7 @@ export function SalesReportPage() {
           onApply={handleApplyFilters}
           onReset={handleResetFilters}
         />
+        
       </div>
     </MobileContainer>
   );

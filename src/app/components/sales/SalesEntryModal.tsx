@@ -4,15 +4,13 @@ import { X } from "lucide-react";
 export type TabType = "unpaid" | "paid" | "claimed";
 
 export interface SalesEntry {
-  id: string; // Changed from number to string to support standard Backend UUIDs / ObjectIds
+  id: string;
   status: TabType;
   name: string;
   service: string;
   amount: number;
   date: string;
-  // Paid-specific fields
   paymentMethod?: string;
-  // Claimed-specific fields
   classification?: string;
   washDate?: string;
 }
@@ -54,7 +52,7 @@ export function SalesEntryModal({ isOpen, onClose, onSave, entry, mode, tabType 
       } else {
         setFormData({
           name: "",
-          service: "WASH",
+          service: "WASH", // Ensure "WASH" exists in your database exactly like this
           amount: "",
           date: new Date().toISOString().split("T")[0],
           paymentMethod: "CASH",
@@ -86,35 +84,16 @@ export function SalesEntryModal({ isOpen, onClose, onSave, entry, mode, tabType 
     
     if (!validate()) return;
 
-    // Construct the payload with proper types
-    // ... inside your SalesEntryModal component ...
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!validate()) return;
-
-    // 1. Map Frontend Tab types to Backend Enum values
-    // This is the CRITICAL fix for the "always paid" bug
-    const statusMapping: Record<TabType, "UNPAID" | "PAID"> = {
-      unpaid: "UNPAID",
-      paid: "PAID",
-      claimed: "PAID", // Claimed items are logically already paid
-    };
-
-    // 2. Construct the payload to match CreateTransactionDto exactly
-    const baseEntryData = {
-      customerName: formData.name.trim().toUpperCase(),
-      serviceName: formData.service, // Matches 'serviceName' in DTO
+    // FIX: Reverted to matching the SalesEntry interface (name, service, amount, date)
+    // The parent component (SalesReportPage) will handle translating these to the backend DTO.
+    const baseEntryData: Omit<SalesEntry, "id"> = {
+      name: formData.name.trim().toUpperCase(),
+      service: formData.service,
       amount: parseFloat(formData.amount),
-      transactionDate: formData.date,
-      paymentStatus: statusMapping[tabType], // Explicitly send UNPAID or PAID
-      
-      // Only send paymentMethod if it's not unpaid
-      ...(tabType !== "unpaid" && { paymentMethod: formData.paymentMethod }),
-      
-      // Meta-data for frontend filtering (if your onSave handler uses it)
+      date: formData.date,
       status: tabType, 
+      
+      ...(tabType !== "unpaid" && { paymentMethod: formData.paymentMethod }),
       
       ...(tabType === "claimed" && { 
         classification: formData.classification,
@@ -123,15 +102,13 @@ export function SalesEntryModal({ isOpen, onClose, onSave, entry, mode, tabType 
     };
 
     // 3. Handle Edit vs Add
-    const entryData: any = mode === "edit" && entry?.id
-      ? { ...baseEntryData, id: entry.id }
+    const entryData = mode === "edit" && entry?.id
+      ? { ...baseEntryData, id: entry.id } as SalesEntry
       : baseEntryData;
 
     onSave(entryData);
     onClose();
   };
-
-  // ... rest of your UI code remains the same ...
 
   if (!isOpen) return null;
 
@@ -249,7 +226,7 @@ export function SalesEntryModal({ isOpen, onClose, onSave, entry, mode, tabType 
                   <option value="CASH">CASH</option>
                   <option value="GCASH">GCASH</option>
                   <option value="CARD">CARD</option>
-                  <option value="BANK TRANSFER">BANK TRANSFER</option>
+                  {/* Removed Bank Transfer as it's not in your Prisma Schema */}
                 </select>
               </div>
             )}
@@ -306,5 +283,4 @@ export function SalesEntryModal({ isOpen, onClose, onSave, entry, mode, tabType 
       </div>
     </div>
   );
-}
 }
