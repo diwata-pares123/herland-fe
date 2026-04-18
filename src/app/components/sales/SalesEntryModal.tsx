@@ -4,7 +4,7 @@ import { X } from "lucide-react";
 export type TabType = "unpaid" | "paid" | "claimed";
 
 export interface SalesEntry {
-  id: number;
+  id: string; // Changed from number to string to support standard Backend UUIDs / ObjectIds
   status: TabType;
   name: string;
   service: string;
@@ -87,26 +87,51 @@ export function SalesEntryModal({ isOpen, onClose, onSave, entry, mode, tabType 
     if (!validate()) return;
 
     // Construct the payload with proper types
+    // ... inside your SalesEntryModal component ...
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!validate()) return;
+
+    // 1. Map Frontend Tab types to Backend Enum values
+    // This is the CRITICAL fix for the "always paid" bug
+    const statusMapping: Record<TabType, "UNPAID" | "PAID"> = {
+      unpaid: "UNPAID",
+      paid: "PAID",
+      claimed: "PAID", // Claimed items are logically already paid
+    };
+
+    // 2. Construct the payload to match CreateTransactionDto exactly
     const baseEntryData = {
-      status: tabType,
-      name: formData.name.trim().toUpperCase(),
-      service: formData.service,
+      customerName: formData.name.trim().toUpperCase(),
+      serviceName: formData.service, // Matches 'serviceName' in DTO
       amount: parseFloat(formData.amount),
-      date: formData.date,
-      ...(tabType === "paid" && { paymentMethod: formData.paymentMethod }),
+      transactionDate: formData.date,
+      paymentStatus: statusMapping[tabType], // Explicitly send UNPAID or PAID
+      
+      // Only send paymentMethod if it's not unpaid
+      ...(tabType !== "unpaid" && { paymentMethod: formData.paymentMethod }),
+      
+      // Meta-data for frontend filtering (if your onSave handler uses it)
+      status: tabType, 
+      
       ...(tabType === "claimed" && { 
         classification: formData.classification,
         washDate: formData.washDate 
       }),
     };
 
-    const entryData: Omit<SalesEntry, "id"> | SalesEntry = mode === "edit" && entry?.id
+    // 3. Handle Edit vs Add
+    const entryData: any = mode === "edit" && entry?.id
       ? { ...baseEntryData, id: entry.id }
       : baseEntryData;
 
     onSave(entryData);
     onClose();
   };
+
+  // ... rest of your UI code remains the same ...
 
   if (!isOpen) return null;
 
@@ -281,4 +306,5 @@ export function SalesEntryModal({ isOpen, onClose, onSave, entry, mode, tabType 
       </div>
     </div>
   );
+}
 }
