@@ -37,22 +37,22 @@ export function TransactionHistoryPage() {
   useEffect(() => {
     const fetchTransactions = async () => {
       try {
-        const response = await fetch("http://localhost:3000/transactions"); // Make sure this matches your backend URL
+        const response = await fetch("http://localhost:3000/transactions"); 
         if (!response.ok) throw new Error("Failed to fetch transactions");
         
         const json = await response.json();
         
         // --- STEP 3: INJECT & MAP DATA ---
-        // Translate the backend keys to match your frontend Transaction interface
         const liveData = json.data.map((item: any) => ({
           id: item.id,
           invoice: item.invoiceNumber,
-          date: item.transactionDate.split("T")[0], // Cuts off the time, keeping just YYYY-MM-DD
+          date: item.transactionDate.split("T")[0], 
           amount: item.totalAmount,
-          status: item.serviceStatus.replace("_", "-"), // Translates ON_GOING to ON-GOING
+          status: item.serviceStatus.replace("_", "-"), 
           customer: item.customerName,
           service: item.items && item.items.length > 0 ? item.items[0].service.name : "N/A",
           paymentMethod: item.paymentMethod || "N/A",
+          paymentStatus: item.paymentStatus || "UNPAID", // NEW: Kinuha natin ang payment status
           notes: ""
         }));
 
@@ -66,6 +66,43 @@ export function TransactionHistoryPage() {
 
     fetchTransactions();
   }, []);
+
+  // NEW: Function para i-update sa database ang status
+  const handleUpdateTransaction = async (id: number, updates: { paymentStatus?: string, serviceStatus?: string }) => {
+    try {
+      const response = await fetch(`http://localhost:3000/transactions/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updates),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to update transaction");
+      }
+
+      // Kapag success sa backend, i-update rin natin ang UI agad para hindi na kailangan mag-refresh
+      setTransactions(prev => prev.map(t => {
+        if (t.id === id) {
+          return {
+            ...t,
+            paymentStatus: (updates.paymentStatus as "UNPAID" | "PAID") || t.paymentStatus,
+            status: (updates.serviceStatus ? updates.serviceStatus.replace("_", "-") : t.status) as TransactionStatus
+          };
+        }
+        return t;
+      }));
+
+      // Isara ang modal at pwede ka maglagay ng alert
+      setShowDetailsModal(false);
+      alert("Successfully updated!");
+
+    } catch (error) {
+      console.error("Error updating:", error);
+      alert("Failed to update transaction. Please try again.");
+    }
+  };
 
   const handleNavigation = (tab: "home" | "sales" | "history" | "profile") => {
     setActiveTab(tab);
@@ -306,7 +343,12 @@ export function TransactionHistoryPage() {
 
         <BottomNav activeTab={activeTab} onTabChange={handleNavigation} />
 
-        <TransactionDetailsModal isOpen={showDetailsModal} onClose={() => setShowDetailsModal(false)} transaction={selectedTransaction} />
+        <TransactionDetailsModal 
+          isOpen={showDetailsModal} 
+          onClose={() => setShowDetailsModal(false)} 
+          transaction={selectedTransaction} 
+          onSave={handleUpdateTransaction} 
+        />
       </div>
     </MobileContainer>
   );

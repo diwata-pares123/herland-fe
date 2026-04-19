@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { MobileContainer } from "../components/MobileContainer";
 import { DashboardHeader } from "../components/dashboard/DashboardHeader";
@@ -13,25 +13,83 @@ export function DashboardPage() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"home" | "sales" | "history" | "profile">("home");
 
-  // NEW: State to hold our backend data
+  // State to hold our backend data
   const [dashboardData, setDashboardData] = useState<any>(null);
+  
+  // NEW: State specifically for the chart data
+  const [transactionsData, setTransactionsData] = useState<any[]>([]);
 
-  // NEW: Fetch data from NestJS backend when the page loads
+  // Fetch data from NestJS backend when the page loads
   useEffect(() => {
-    const fetchSummary = async () => {
+    const fetchDashboardInfo = async () => {
       try {
-        const response = await fetch("http://localhost:3000/reports/summary");
-        if (response.ok) {
-          const data = await response.json();
-          setDashboardData(data);
+        // 1. Fetch Summary for Stats Cards (Your existing logic)
+        const summaryResponse = await fetch("http://localhost:3000/reports/summary");
+        if (summaryResponse.ok) {
+          const summaryJson = await summaryResponse.json();
+          setDashboardData(summaryJson);
+        }
+
+        // 2. Fetch Transactions for the Daily Sales Chart
+        const transResponse = await fetch("http://localhost:3000/transactions");
+        if (transResponse.ok) {
+          const transJson = await transResponse.json();
+          setTransactionsData(Array.isArray(transJson) ? transJson : (transJson.data || []));
         }
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
       }
     };
 
-    fetchSummary();
+    fetchDashboardInfo();
   }, []);
+
+  // NEW: Compute Chart Data exactly like in SalesReportPage
+  const chartData = useMemo(() => {
+    const grouped = transactionsData.reduce((acc: any, curr: any) => {
+      const pStatus = String(curr.paymentStatus || "").toUpperCase();
+      const sStatus = String(curr.serviceStatus || "").toUpperCase();
+      
+      // Isama lang sa chart kung nabayaran na o na-claim na
+      if (pStatus !== "PAID" && sStatus !== "CLAIMED") return acc;
+
+      const dateStr = curr.transactionDate 
+        ? curr.transactionDate.split("T")[0] 
+        : new Date().toISOString().split("T")[0];
+      
+      if (!acc[dateStr]) {
+        acc[dateStr] = { val1: 0, val2: 0, val3: 0 };
+      }
+
+      const amount = Number(curr.totalAmount || curr.amount) || 0;
+      const serviceName = (curr.serviceName || curr.items?.[0]?.service?.name || "").toUpperCase();
+
+      // I-distribute sa 3 bars (WASH, DRY, Iba pa/FOLD)
+      if (serviceName === "WASH") {
+        acc[dateStr].val1 += amount;
+      } else if (serviceName === "DRY") {
+        acc[dateStr].val2 += amount;
+      } else {
+        acc[dateStr].val3 += amount;
+      }
+
+      return acc;
+    }, {});
+
+    // I-sort by date (Oldest to Newest) at kunin ang huling 7 days
+    const sortedDates = Object.keys(grouped).sort();
+    return sortedDates.map(date => {
+      const d = new Date(date);
+      const label = isNaN(d.getTime()) ? date : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      
+      return {
+        label,
+        val1: grouped[date].val1,
+        val2: grouped[date].val2,
+        val3: grouped[date].val3
+      };
+    }).slice(-7);
+  }, [transactionsData]);
 
   const handleNavigation = (tab: "home" | "sales" | "history" | "profile") => {
     setActiveTab(tab);
@@ -40,11 +98,11 @@ export function DashboardPage() {
     else if (tab === "history") navigate("/history");
   };
 
-  // NEW: Safely extract the data (fallback to 0 if loading)
+  // Safely extract the data (fallback to 0 if loading)
   const totalSales = dashboardData?.overview?.totalSalesAmount || 0;
   const totalCustomers = dashboardData?.overview?.totalCustomers || 0;
 
-  // NEW: Format the currency to match your Figma design (separating whole number and decimal)
+  // Format the currency to match your Figma design
   const formattedSalesWhole = totalSales.toLocaleString("en-US", { maximumFractionDigits: 0 });
   const formattedSalesDecimal = (totalSales % 1).toFixed(2).substring(1); // extracts ".00"
 
@@ -89,16 +147,14 @@ export function DashboardPage() {
 
           {/* Stats Cards */}
           <div className="px-6 mb-4 flex gap-3 overflow-x-auto scrollbar-hide">
-            {/* UPDATED: Total Sales using real backend data */}
             <StatsCard
               icon="chart"
               title="Total sales"
               value={`₱${formattedSalesWhole}`}
               decimal={formattedSalesDecimal}
-              change="+0.00%" // We can calculate real percentages later!
+              change="+0.00%" 
               changeType="increase"
             />
-            {/* UPDATED: Total Customers using real backend data */}
             <StatsCard
               icon="users"
               title="New customers"
@@ -110,8 +166,8 @@ export function DashboardPage() {
 
           {/* Daily Sales Chart */}
           <div className="px-6 mb-4">
-            <DailySalesChart /> 
-            {/* Note: We will pass graphData into this component next! */}
+            {/* UPDATED: Ipinasa na natin ang chartData dito! */}
+            <DailySalesChart data={chartData} /> 
           </div>
 
           {/* Action Cards */}

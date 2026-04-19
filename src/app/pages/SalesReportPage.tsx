@@ -215,9 +215,9 @@ export function SalesReportPage() {
   };
 
   // --- SAVE/UPDATE LOGIC ---
+  // --- SAVE/UPDATE LOGIC ---
   const handleSaveEntry = async (entry: Omit<SalesEntry, "id"> | SalesEntry) => {
     
-    // 1. UPDATED PAYLOAD TO MATCH YOUR PRISMA SCHEMA
     const payload = {
       customerName: entry.name, 
       serviceName: entry.service, 
@@ -232,7 +232,7 @@ export function SalesReportPage() {
       if ("id" in entry) {
         // UPDATE
         const response = await fetch(`http://localhost:3000/transactions/${entry.id}`, {
-          method: "PUT",
+          method: "PATCH", // <-- FIXED: Pinalitan natin ng PATCH
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
@@ -251,7 +251,6 @@ export function SalesReportPage() {
           body: JSON.stringify(payload),
         });
 
-        // 2. EXTRACT EXACT ERROR FROM NESTJS
         if (!response.ok) {
           const errorData = await response.json();
           const errorMessage = Array.isArray(errorData.message) 
@@ -335,7 +334,7 @@ export function SalesReportPage() {
         <DashboardHeader 
           userName="User" 
           onMenuClick={() => setIsMenuOpen(true)} 
-          onNotificationClick={() => {}} 
+          onNotificationClick={() => navigate("/notifications")} 
           onAvatarClick={() => navigate("/profile")} 
         />
 
