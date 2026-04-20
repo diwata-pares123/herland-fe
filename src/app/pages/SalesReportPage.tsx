@@ -50,7 +50,14 @@ export function SalesReportPage() {
   const fetchTransactions = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch("http://localhost:3000/transactions");
+      // --- NEW: KUNIN ANG TOKEN MULA SA LOCAL STORAGE ---
+      const token = localStorage.getItem("token"); // Palitan ng 'accessToken' kung yun ang gamit mo sa login
+
+      const response = await fetch("http://localhost:3000/transactions", {
+        headers: {
+          "Authorization": `Bearer ${token}` // <-- IPASA ANG TOKEN
+        }
+      });
       if (!response.ok) throw new Error("Failed to fetch data");
       const json = await response.json();
 
@@ -199,8 +206,12 @@ export function SalesReportPage() {
   const handleDeleteEntry = async (id: string) => {
     if (window.confirm("Are you sure you want to delete this entry?")) {
       try {
+        const token = localStorage.getItem("token"); // <-- KUNIN ANG TOKEN
         const response = await fetch(`http://localhost:3000/transactions/${id}`, {
           method: "DELETE",
+          headers: {
+            "Authorization": `Bearer ${token}` // <-- IPASA ANG TOKEN
+          }
         });
 
         if (!response.ok) throw new Error("Failed to delete from database");
@@ -215,7 +226,6 @@ export function SalesReportPage() {
   };
 
   // --- SAVE/UPDATE LOGIC ---
-  // --- SAVE/UPDATE LOGIC ---
   const handleSaveEntry = async (entry: Omit<SalesEntry, "id"> | SalesEntry) => {
     
     const payload = {
@@ -229,11 +239,16 @@ export function SalesReportPage() {
     };
 
     try {
+      const token = localStorage.getItem("token"); // <-- KUNIN ANG TOKEN
+
       if ("id" in entry) {
         // UPDATE
         const response = await fetch(`http://localhost:3000/transactions/${entry.id}`, {
-          method: "PATCH", // <-- FIXED: Pinalitan natin ng PATCH
-          headers: { "Content-Type": "application/json" },
+          method: "PATCH", 
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}` // <-- IPASA ANG TOKEN
+          },
           body: JSON.stringify(payload),
         });
 
@@ -247,7 +262,10 @@ export function SalesReportPage() {
         // CREATE
         const response = await fetch("http://localhost:3000/transactions", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}` // <-- IPASA ANG TOKEN
+          },
           body: JSON.stringify(payload),
         });
 
@@ -345,7 +363,6 @@ export function SalesReportPage() {
             <SegmentedControl activeTab={currentTabType} onTabChange={handleTabChange} />
           </div>
 
-          {/* DITO IPAPASA YUNG COMPUTED DATA SA CHART */}
           <div className="px-6 py-4 bg-white mb-2 mt-2">
             <DailySalesChart data={chartData} />
           </div>

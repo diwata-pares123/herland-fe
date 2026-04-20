@@ -13,6 +13,9 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // NEW: Para sa loading state
+  const [generalError, setGeneralError] = useState(""); // NEW: Para sa errors from backend
+
   const [errors, setErrors] = useState<{
     currentPassword?: string;
     newPassword?: string;
@@ -24,12 +27,10 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
   const validateForm = () => {
     const newErrors: typeof errors = {};
     
-    // Current password validation
     if (!currentPassword) {
       newErrors.currentPassword = "Current password is required";
     }
     
-    // New password validation
     if (!newPassword) {
       newErrors.newPassword = "New password is required";
     } else if (newPassword.length < 8) {
@@ -38,14 +39,12 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
       newErrors.newPassword = "Password must contain uppercase, lowercase, and number";
     }
     
-    // Confirm password validation
     if (!confirmPassword) {
       newErrors.confirmPassword = "Please confirm your password";
     } else if (newPassword !== confirmPassword) {
       newErrors.confirmPassword = "Passwords do not match";
     }
     
-    // Check if new password is same as current
     if (currentPassword && newPassword && currentPassword === newPassword) {
       newErrors.newPassword = "New password must be different from current password";
     }
@@ -54,13 +53,54 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // --- CONNECTED TO BACKEND ---
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setGeneralError("");
     
     if (validateForm()) {
-      // Mock password change success
-      alert("Password changed successfully!");
-      handleClose();
+      setIsLoading(true);
+      
+      try {
+        const token = localStorage.getItem("access_token");
+        if (!token) {
+          setGeneralError("Session expired. Please log in again.");
+          setIsLoading(false);
+          return;
+        }
+
+        const response = await fetch("http://localhost:3000/auth/change-password", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            currentPassword,
+            newPassword
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          // Kung mali ang current password, ilagay ang error sa ilalim ng current password field
+          if (data.message === 'Incorrect current password') {
+            setErrors(prev => ({ ...prev, currentPassword: "Incorrect current password" }));
+          } else {
+            setGeneralError(data.message || "Failed to change password");
+          }
+          throw new Error(data.message);
+        }
+
+        // Kapag successful
+        alert("Password changed successfully!");
+        handleClose();
+      } catch (error) {
+        console.error("Change password error:", error);
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -72,6 +112,7 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
     setShowNewPassword(false);
     setShowConfirmPassword(false);
     setErrors({});
+    setGeneralError("");
     onClose();
   };
 
@@ -94,15 +135,9 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
 
   return (
     <>
-      {/* Overlay */}
-      <div 
-        className="fixed inset-0 bg-black/50 z-50"
-        onClick={handleClose}
-      />
+      <div className="fixed inset-0 bg-black/50 z-50" onClick={handleClose} />
 
-      {/* Modal */}
       <div className="fixed inset-x-0 bottom-0 bg-white rounded-t-[20px] z-50 animate-slide-up max-h-[90vh] overflow-y-auto">
-        {/* Header */}
         <div className="sticky top-0 bg-white border-b border-[#e0e2e6] px-6 py-4 rounded-t-[20px]">
           <div className="flex items-center justify-between">
             <h2 className="font-['Poppins:SemiBold',sans-serif] text-[#3878c2] text-[20px]">
@@ -120,8 +155,14 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
           </p>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="px-6 py-4">
+          {/* General Error Message */}
+          {generalError && (
+            <div className="mb-4 p-2 bg-red-100 border border-red-400 text-red-700 text-[12px] rounded text-center">
+              {generalError}
+            </div>
+          )}
+
           {/* Current Password */}
           <div className="mb-4">
             <label className="flex items-center gap-2 mb-2">
@@ -195,7 +236,6 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
               </p>
             )}
             
-            {/* Password Strength Indicator */}
             {newPassword && !errors.newPassword && (
               <div className="mt-2">
                 <div className="flex items-center gap-2 mb-1">
@@ -208,10 +248,7 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
                       }}
                     />
                   </div>
-                  <span 
-                    className="font-['Inter:Semi_Bold',sans-serif] text-[10px]"
-                    style={{ color: passwordStrength.color }}
-                  >
+                  <span className="font-['Inter:Semi_Bold',sans-serif] text-[10px]" style={{ color: passwordStrength.color }}>
                     {passwordStrength.label}
                   </span>
                 </div>
@@ -270,15 +307,17 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
             <button
               type="button"
               onClick={handleClose}
+              disabled={isLoading}
               className="flex-1 px-4 py-3 bg-[#e0e2e6] text-[#3a3e44] rounded-[6px] border-none cursor-pointer hover:bg-[#d0d2d6] font-['Inter:Semi_Bold',sans-serif] text-[14px]"
             >
               CANCEL
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-3 bg-[#3878c2] text-white rounded-[6px] border-none cursor-pointer hover:bg-[#2d6aa8] font-['Inter:Semi_Bold',sans-serif] text-[14px] shadow-sm"
+              disabled={isLoading}
+              className={`flex-1 px-4 py-3 bg-[#3878c2] text-white rounded-[6px] border-none font-['Inter:Semi_Bold',sans-serif] text-[14px] shadow-sm ${isLoading ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:bg-[#2d6aa8]'}`}
             >
-              CHANGE PASSWORD
+              {isLoading ? 'SAVING...' : 'CHANGE PASSWORD'}
             </button>
           </div>
         </form>

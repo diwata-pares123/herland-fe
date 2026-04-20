@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, Bell } from "lucide-react";
 import { MobileContainer } from "../components/MobileContainer";
@@ -31,21 +31,73 @@ export function NotificationSettingsPage() {
   });
 
   const [showSaveButton, setShowSaveButton] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // --- 1. FETCH SETTINGS ON LOAD ---
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const token = localStorage.getItem("access_token");
+        if (!token) {
+          navigate("/login");
+          return;
+        }
+
+        const response = await fetch("http://localhost:3000/notifications/settings", {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) throw new Error("Failed to fetch settings");
+
+        const data = await response.json();
+        
+        // Remove 'id' and 'user' from the backend response so we only merge the booleans
+        const { id, user, ...settingsData } = data; 
+        setPreferences(prev => ({ ...prev, ...settingsData }));
+      } catch (error) {
+        console.error("Error loading notification settings:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSettings();
+  }, [navigate]);
 
   const handleToggle = (key: keyof NotificationPreferences, value: boolean) => {
     setPreferences(prev => ({ ...prev, [key]: value }));
     setShowSaveButton(true);
   };
 
-  const handleSave = () => {
-    // Mock save action
-    alert("Notification settings saved successfully!");
-    setShowSaveButton(false);
+  // --- 2. SAVE CHANGES TO BACKEND ---
+  const handleSave = async () => {
+    try {
+      const token = localStorage.getItem("access_token");
+      const response = await fetch("http://localhost:3000/notifications/settings", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify(preferences)
+      });
+
+      if (!response.ok) throw new Error("Failed to save settings");
+
+      alert("Notification settings saved successfully!");
+      setShowSaveButton(false);
+    } catch (error) {
+      console.error("Error saving settings:", error);
+      alert("Failed to save settings. Please try again.");
+    }
   };
 
-  const handleReset = () => {
+  // --- 3. RESET TO DEFAULT (Updates frontend AND backend) ---
+  const handleReset = async () => {
     if (window.confirm("Reset all notification settings to default?")) {
-      setPreferences({
+      const defaultSettings = {
         orderUpdates: true,
         paymentNotifications: true,
         newOrders: true,
@@ -55,10 +107,37 @@ export function NotificationSettingsPage() {
         emailNotifications: true,
         pushNotifications: true,
         smsNotifications: false,
-      });
-      setShowSaveButton(false);
+      };
+      
+      setPreferences(defaultSettings);
+      setShowSaveButton(false); // Hide because we are saving immediately
+
+      try {
+        const token = localStorage.getItem("access_token");
+        await fetch("http://localhost:3000/notifications/settings", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify(defaultSettings)
+        });
+      } catch (error) {
+        console.error("Error resetting settings:", error);
+        alert("Failed to reset settings on the server.");
+      }
     }
   };
+
+  if (isLoading) {
+    return (
+      <MobileContainer>
+         <div className="flex h-full items-center justify-center bg-[#f5f5f5]">
+            <p className="text-[#ababab]">Loading settings...</p>
+         </div>
+      </MobileContainer>
+    );
+  }
 
   return (
     <MobileContainer>

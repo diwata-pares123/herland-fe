@@ -106,7 +106,7 @@ export function AdminLoginPage() {
 
         else if (data.access_token) {
 
-          localStorage.setItem("token", data.access_token);
+          localStorage.setItem("access_token", data.access_token);
 
           navigate("/dashboard");
 

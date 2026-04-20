@@ -23,15 +23,27 @@ export function DashboardPage() {
   useEffect(() => {
     const fetchDashboardInfo = async () => {
       try {
-        // 1. Fetch Summary for Stats Cards (Your existing logic)
-        const summaryResponse = await fetch("http://localhost:3000/reports/summary");
+        // --- FIX: KUNIN ANG TOKEN MULA SA LOCAL STORAGE ---
+        // Palitan ang "access_token" ng "token" kung yun ang ginamit mo sa login page mo
+        const token = localStorage.getItem("access_token") || localStorage.getItem("token"); 
+
+        // 1. Fetch Summary for Stats Cards (May Headers na!)
+        const summaryResponse = await fetch("http://localhost:3000/reports/summary", {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
         if (summaryResponse.ok) {
           const summaryJson = await summaryResponse.json();
           setDashboardData(summaryJson);
         }
 
-        // 2. Fetch Transactions for the Daily Sales Chart
-        const transResponse = await fetch("http://localhost:3000/transactions");
+        // 2. Fetch Transactions for the Daily Sales Chart (May Headers na rin!)
+        const transResponse = await fetch("http://localhost:3000/transactions", {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
         if (transResponse.ok) {
           const transJson = await transResponse.json();
           setTransactionsData(Array.isArray(transJson) ? transJson : (transJson.data || []));
@@ -44,7 +56,7 @@ export function DashboardPage() {
     fetchDashboardInfo();
   }, []);
 
-  // NEW: Compute Chart Data exactly like in SalesReportPage
+  // Compute Chart Data exactly like in SalesReportPage
   const chartData = useMemo(() => {
     const grouped = transactionsData.reduce((acc: any, curr: any) => {
       const pStatus = String(curr.paymentStatus || "").toUpperCase();
@@ -166,7 +178,6 @@ export function DashboardPage() {
 
           {/* Daily Sales Chart */}
           <div className="px-6 mb-4">
-            {/* UPDATED: Ipinasa na natin ang chartData dito! */}
             <DailySalesChart data={chartData} /> 
           </div>
 

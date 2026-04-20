@@ -66,7 +66,7 @@ export function TwoStepVerificationPage() {
 
         // Kapag tama ang code, i-save ang token at pumunta sa dashboard
         if (data.access_token) {
-          localStorage.setItem("token", data.access_token);
+          localStorage.setItem("access_token", data.access_token);
           navigate("/dashboard");
         }
       } catch (error: any) {

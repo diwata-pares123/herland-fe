@@ -19,11 +19,9 @@ export function TransactionHistoryPage() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"home" | "sales" | "history" | "profile">("history");
   
-  // Real Data States
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // UI States
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -33,17 +31,27 @@ export function TransactionHistoryPage() {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
 
-  // --- STEP 2: FETCH THE DATA ---
+  // --- STEP 2: FETCH THE DATA (WITH TOKEN) ---
   useEffect(() => {
     const fetchTransactions = async () => {
       try {
-        const response = await fetch("http://localhost:3000/transactions"); 
+        // KUNIN ANG TOKEN
+        const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+
+        const response = await fetch("http://localhost:3000/transactions", {
+          headers: {
+            "Authorization": `Bearer ${token}` // <--- FIX: Isinama ang token
+          }
+        }); 
+        
         if (!response.ok) throw new Error("Failed to fetch transactions");
         
         const json = await response.json();
         
-        // --- STEP 3: INJECT & MAP DATA ---
-        const liveData = json.data.map((item: any) => ({
+        // Handle variations in response structure (json or json.data)
+        const rawData = Array.isArray(json) ? json : (json.data || []);
+        
+        const liveData = rawData.map((item: any) => ({
           id: item.id,
           invoice: item.invoiceNumber,
           date: item.transactionDate.split("T")[0], 
@@ -52,7 +60,7 @@ export function TransactionHistoryPage() {
           customer: item.customerName,
           service: item.items && item.items.length > 0 ? item.items[0].service.name : "N/A",
           paymentMethod: item.paymentMethod || "N/A",
-          paymentStatus: item.paymentStatus || "UNPAID", // NEW: Kinuha natin ang payment status
+          paymentStatus: item.paymentStatus || "UNPAID",
           notes: ""
         }));
 
@@ -67,13 +75,17 @@ export function TransactionHistoryPage() {
     fetchTransactions();
   }, []);
 
-  // NEW: Function para i-update sa database ang status
+  // --- STEP 3: UPDATE DATA (WITH TOKEN) ---
   const handleUpdateTransaction = async (id: number, updates: { paymentStatus?: string, serviceStatus?: string }) => {
     try {
+      // KUNIN ANG TOKEN
+      const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+
       const response = await fetch(`http://localhost:3000/transactions/${id}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` // <--- FIX: Isinama ang token
         },
         body: JSON.stringify(updates),
       });
@@ -82,7 +94,6 @@ export function TransactionHistoryPage() {
         throw new Error("Failed to update transaction");
       }
 
-      // Kapag success sa backend, i-update rin natin ang UI agad para hindi na kailangan mag-refresh
       setTransactions(prev => prev.map(t => {
         if (t.id === id) {
           return {
@@ -94,7 +105,6 @@ export function TransactionHistoryPage() {
         return t;
       }));
 
-      // Isara ang modal at pwede ka maglagay ng alert
       setShowDetailsModal(false);
       alert("Successfully updated!");
 
@@ -104,6 +114,7 @@ export function TransactionHistoryPage() {
     }
   };
 
+  // --- REST OF YOUR LOGIC (NO CHANGES) ---
   const handleNavigation = (tab: "home" | "sales" | "history" | "profile") => {
     setActiveTab(tab);
     if (tab === "home") navigate("/dashboard");
@@ -116,32 +127,25 @@ export function TransactionHistoryPage() {
     setShowDetailsModal(true);
   };
 
-  // Filter and sort data using our real 'transactions' state instead of mock data
   const filteredAndSortedData = useMemo(() => {
     let filtered = [...transactions];
-
     if (statusFilter !== "ALL") {
       filtered = filtered.filter(t => t.status === statusFilter);
     }
-
     filtered.sort((a, b) => {
       let aVal: any = a[sortField];
       let bVal: any = b[sortField];
-
       if (sortField === "amount") {
         aVal = parseFloat(aVal);
         bVal = parseFloat(bVal);
       }
-
       if (aVal < bVal) return sortOrder === "asc" ? -1 : 1;
       if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
-
     return filtered;
   }, [transactions, statusFilter, sortField, sortOrder]);
 
-  // Pagination
   const totalPages = Math.ceil(filteredAndSortedData.length / ITEMS_PER_PAGE);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const endIndex = startIndex + ITEMS_PER_PAGE;
@@ -170,7 +174,6 @@ export function TransactionHistoryPage() {
   const getPageNumbers = () => {
     const pages = [];
     const maxVisible = 5;
-    
     if (totalPages <= maxVisible) {
       for (let i = 1; i <= totalPages; i++) pages.push(i);
     } else {
@@ -296,9 +299,9 @@ export function TransactionHistoryPage() {
 
             <div className="flex flex-col">
               {isLoading ? (
-                 <div className="py-8 text-center">
-                   <p className="font-['Inter:Regular',sans-serif] text-[#ababab] text-[12px]">Loading live database data...</p>
-                 </div>
+                  <div className="py-8 text-center">
+                    <p className="font-['Inter:Regular',sans-serif] text-[#ababab] text-[12px]">Loading live database data...</p>
+                  </div>
               ) : currentPageData.length === 0 ? (
                 <div className="py-8 text-center">
                   <p className="font-['Inter:Regular',sans-serif] text-[#ababab] text-[12px]">No transactions found</p>
