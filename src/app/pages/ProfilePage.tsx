@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { User, Mail, Phone, MapPin, Calendar, Edit2, Save, X, LogOut } from "lucide-react";
 import { MobileContainer } from "../components/MobileContainer";
@@ -23,17 +23,78 @@ export function ProfilePage() {
   const [activeTab, setActiveTab] = useState<"home" | "sales" | "history" | "profile">("profile");
   const [isEditing, setIsEditing] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
   const [profileData, setProfileData] = useState<ProfileData>({
-    name: "User Admin",
-    email: "user.admin@laundry.com",
-    phone: "+63 912 345 6789",
-    address: "123 Main Street, Manila, Philippines",
-    joinDate: "January 2026",
-    role: "Administrator",
+    name: "Loading...",
+    email: "Loading...",
+    phone: "Loading...",
+    address: "Loading...",
+    joinDate: "Loading...",
+    role: "Loading...",
   });
 
   const [editData, setEditData] = useState<ProfileData>(profileData);
+
+  // --- KONEKSYON SA BACKEND ---
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        // Kunin ang token mula sa storage
+        const token = localStorage.getItem("access_token");
+
+        // Kung walang token, ibalik sa login page
+        if (!token) {
+          console.warn("Walang token na nakita. Banalik sa login...");
+          navigate("/login");
+          return;
+        }
+
+        // Tawagin ang API
+        const response = await fetch("http://localhost:3000/auth/me", {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json"
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch profile. Baka expired na ang token.");
+        }
+
+        const data = await response.json();
+
+        // I-format ang petsa (e.g., "April 2026")
+        const joinDateFormatted = new Date(data.createdAt).toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric"
+        });
+
+        // Ilagay ang data mula database papunta sa UI
+        const fetchedData = {
+          name: data.name,
+          email: data.email,
+          phone: data.phone || "Not provided",
+          address: data.location || "Not provided",
+          joinDate: joinDateFormatted,
+          role: data.role === "ADMIN" ? "Administrator" : "Staff",
+        };
+
+        setProfileData(fetchedData);
+        setEditData(fetchedData);
+      } catch (error) {
+        console.error("Error:", error);
+        // Tanggalin ang sirang token at ibalik sa login
+        localStorage.removeItem("access_token");
+        navigate("/login");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, [navigate]);
 
   const handleNavigation = (tab: "home" | "sales" | "history" | "profile") => {
     setActiveTab(tab);
@@ -63,6 +124,8 @@ export function ProfilePage() {
 
   const handleLogout = () => {
     if (window.confirm("Are you sure you want to logout?")) {
+      // BURAHIN ANG TOKEN PAG NAG LOGOUT
+      localStorage.removeItem("access_token");
       navigate("/login");
     }
   };
@@ -82,12 +145,12 @@ export function ProfilePage() {
         <SideMenu 
           isOpen={isMenuOpen} 
           onClose={() => setIsMenuOpen(false)}
-          onLogout={() => navigate("/login")}
+          onLogout={handleLogout}
         />
 
         {/* Header */}
         <DashboardHeader 
-          userName={profileData.name}
+          userName={isLoading ? "Loading..." : profileData.name}
           onNotificationClick={() => navigate("/notifications")}
           onMenuClick={() => setIsMenuOpen(true)}
           onAvatarClick={() => navigate("/profile")}
@@ -241,19 +304,16 @@ export function ProfilePage() {
               Account Settings
             </h2>
 
-            {/* Change Password Button */}
             <SettingsRow
               label="Change Password"
               onClick={() => setIsChangePasswordOpen(true)}
             />
 
-            {/* Notification Settings Button */}
             <SettingsRow
               label="Notification Settings"
               onClick={() => navigate("/settings/notifications")}
             />
 
-            {/* Privacy Settings Button */}
             <SettingsRow
               label="Privacy Settings"
               onClick={() => navigate("/settings/privacy")}

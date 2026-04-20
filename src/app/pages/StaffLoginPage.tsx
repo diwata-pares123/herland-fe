@@ -2,23 +2,24 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Logo } from "../components/Logo";
 import { BackgroundShape } from "../components/BackgroundShape";
-import { TextInput } from "../components/TextInput";
 import { Checkbox } from "../components/Checkbox";
 import { MobileContainer } from "../components/MobileContainer";
 
 export function StaffLoginPage() {
   const navigate = useNavigate();
-  const [username, setUsername] = useState("");
+  // Pinalitan natin ang state to 'email' para mag-match sa backend mo
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState({ username: "", password: "" });
+  const [errors, setErrors] = useState({ email: "", password: "", general: "" });
+  const [isLoading, setIsLoading] = useState(false); // Para sa loading state ng button
 
-  const handleLogin = () => {
-    const newErrors = { username: "", password: "" };
+  const handleLogin = async () => {
+    const newErrors = { email: "", password: "", general: "" };
     
-    if (!username.trim()) {
-      newErrors.username = "Username is required";
+    if (!email.trim()) {
+      newErrors.email = "Email is required";
     }
     if (!password.trim()) {
       newErrors.password = "Password is required";
@@ -26,16 +27,49 @@ export function StaffLoginPage() {
 
     setErrors(newErrors);
 
-    if (!newErrors.username && !newErrors.password) {
-      // Navigate to dashboard (staff don't need 2FA)
-      navigate("/dashboard");
+    if (!newErrors.email && !newErrors.password) {
+      setIsLoading(true);
+      
+      try {
+        const response = await fetch("http://localhost:3000/auth/login", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || "Invalid credentials");
+        }
+
+        
+        // 1. Kung kailangan ng 2FA (OTP)
+        if (data.message === '2FA_REQUIRED') {
+          // Ipasa natin ang email sa next page para alam ng 2FA page kung kaninong email ang ife-fetch
+          navigate("/two-step-verification", { state: { email, password } });
+        }
+        // 2. Kung rekta pasok na (Staff na walang 2FA setup)
+        else if (data.access_token) {
+          // FIXED: Pinalitan ang "token" ng "access_token" para mahanap ng ProfilePage
+          localStorage.setItem("access_token", data.access_token);
+          navigate("/dashboard");
+        }
+
+      } catch (error: any) {
+        setErrors(prev => ({ ...prev, general: error.message }));
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
   return (
     <MobileContainer>
       <div
-        className="relative size-full flex flex-col items-center"
+        className="relative size-full flex flex-col items-center overflow-y-auto pb-10"
         data-name="Log in (Staff)"
         style={{
           backgroundImage:
@@ -56,23 +90,31 @@ export function StaffLoginPage() {
 
         {/* Form Container */}
         <div className="w-full max-w-[307px] px-4 mt-[20px]">
-          {/* Username Field */}
+          
+          {/* General Error Message from Backend */}
+          {errors.general && (
+            <div className="mb-4 p-2 bg-red-100 border border-red-400 text-red-700 text-sm rounded text-center font-['Poppins:Medium',sans-serif]">
+              {errors.general}
+            </div>
+          )}
+
+          {/* Email Field */}
           <div className="mb-[20px]">
             <p className="font-['Poppins:Medium',sans-serif] leading-[normal] not-italic text-[#184e8d] text-[15px] mb-2">
-              Username
+              Email
             </p>
             <div className="relative">
               <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your username"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email"
                 className="w-full bg-white/90 border-2 border-[#3878c2]/30 rounded-lg px-4 py-3 outline-none font-['Poppins:Regular',sans-serif] text-[15px] text-[#184e8d] placeholder:text-[#3878c2]/50 focus:border-[#3878c2] focus:bg-white transition-colors"
                 style={{ caretColor: "#3878c2" }}
               />
             </div>
-            {errors.username && (
-              <p className="font-['Poppins:Medium',sans-serif] text-[12px] text-red-500 mt-1">{errors.username}</p>
+            {errors.email && (
+              <p className="font-['Poppins:Medium',sans-serif] text-[12px] text-red-500 mt-1">{errors.email}</p>
             )}
           </div>
 
@@ -123,10 +165,11 @@ export function StaffLoginPage() {
         <div className="w-full max-w-[352px] px-4 mt-[20px]">
           <button
             onClick={handleLogin}
-            className="relative bg-gradient-to-r from-[#20a9ea] h-[47px] rounded-[30px] to-[#006c9f] via-[#118cc6] via-[69.712%] w-full flex items-center justify-center cursor-pointer border-none"
+            disabled={isLoading}
+            className={`relative bg-gradient-to-r from-[#20a9ea] h-[47px] rounded-[30px] to-[#006c9f] via-[#118cc6] w-full flex items-center justify-center border-none ${isLoading ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
           >
             <p className="font-['Poppins:SemiBold',sans-serif] text-[16px] text-white tracking-[0.8px] leading-[50px]">
-              Log in as Staff
+              {isLoading ? "Logging in..." : "Log in as Staff"}
             </p>
           </button>
         </div>
@@ -148,7 +191,7 @@ function EyeOffButton({ isVisible }: { isVisible: boolean }) {
             strokeWidth="2"
           />
           <path
-            d="M11.9107 13.15C13.5676 13.15 14.9107 11.8069 14.9107 10.15C14.9107 8.49315 13.5676 7.15 11.9107 7.15C10.2539 7.15 8.91071 8.49315 8.91071 10.15C8.91071 11.8069 10.2539 13.15 11.9107 13.15Z"
+            d="M11.9107 13.15C13.5676 13.15 14.9107 11.8069 14.9107 10.15C14.9107 8.49315 13.5676 7.15 11.9107 7.15C10.2539 7.15 8.9107 8.49315 8.9107 10.15C8.9107 11.8069 10.2539 13.15 11.9107 13.15Z"
             stroke="#63BCE6"
             strokeLinecap="round"
             strokeLinejoin="round"
