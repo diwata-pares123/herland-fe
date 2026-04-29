@@ -50,14 +50,20 @@ export function SalesReportPage() {
   const fetchTransactions = async () => {
     setIsLoading(true);
     try {
-      // --- NEW: KUNIN ANG TOKEN MULA SA LOCAL STORAGE ---
-      const token = localStorage.getItem("token"); // Palitan ng 'accessToken' kung yun ang gamit mo sa login
+      // Kunin ang token, checking both possible keys
+      const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+
+      if (!token) {
+        console.error("No token found in localStorage.");
+        return;
+      }
 
       const response = await fetch("http://localhost:3000/transactions", {
         headers: {
-          "Authorization": `Bearer ${token}` // <-- IPASA ANG TOKEN
+          "Authorization": `Bearer ${token}`
         }
       });
+      
       if (!response.ok) throw new Error("Failed to fetch data");
       const json = await response.json();
 
@@ -149,11 +155,9 @@ export function SalesReportPage() {
     return `PHP ${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }, [filteredAndSortedData]);
 
-  // --- NEW: COMPUTE DATA FOR THE CHART ---
+  // --- COMPUTE DATA FOR THE CHART ---
   const chartData = useMemo(() => {
-    // 1. Ipunin ang mga sales kada araw
     const grouped = salesData.reduce((acc: any, curr: any) => {
-      // Isama lang sa chart kung nabayaran na o na-claim na
       if (curr.status !== "paid" && curr.status !== "claimed") return acc;
 
       const dateStr = curr.date;
@@ -164,19 +168,17 @@ export function SalesReportPage() {
       const amount = Number(curr.amount) || 0;
       const serviceName = (curr.service || "").toUpperCase();
 
-      // I-distribute sa 3 bars (WASH, DRY, Iba pa/FOLD)
       if (serviceName === "WASH") {
         acc[dateStr].val1 += amount;
       } else if (serviceName === "DRY") {
         acc[dateStr].val2 += amount;
       } else {
-        acc[dateStr].val3 += amount; // Dito mapupunta ang FOLD, WASH & DRY, etc.
+        acc[dateStr].val3 += amount; 
       }
 
       return acc;
     }, {});
 
-    // 2. I-sort by date (Oldest to Newest) at kunin ang huling 7 days
     const sortedDates = Object.keys(grouped).sort();
     return sortedDates.map(date => {
       const d = new Date(date);
@@ -188,7 +190,7 @@ export function SalesReportPage() {
         val2: grouped[date].val2,
         val3: grouped[date].val3
       };
-    }).slice(-7); // Keep recent 7 records only
+    }).slice(-7); 
   }, [salesData]);
 
   const handleTabChange = (tab: TabType) => {
@@ -206,17 +208,21 @@ export function SalesReportPage() {
   const handleDeleteEntry = async (id: string) => {
     if (window.confirm("Are you sure you want to delete this entry?")) {
       try {
-        const token = localStorage.getItem("token"); // <-- KUNIN ANG TOKEN
+        const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+        if (!token) {
+          alert("Session expired. Please log in again.");
+          return;
+        }
+
         const response = await fetch(`http://localhost:3000/transactions/${id}`, {
           method: "DELETE",
           headers: {
-            "Authorization": `Bearer ${token}` // <-- IPASA ANG TOKEN
+            "Authorization": `Bearer ${token}`
           }
         });
 
         if (!response.ok) throw new Error("Failed to delete from database");
 
-        // Sync local state: remove the deleted item
         setSalesData(prev => prev.filter(entry => entry.id !== id));
       } catch (error) {
         console.error("Delete error:", error);
@@ -239,7 +245,11 @@ export function SalesReportPage() {
     };
 
     try {
-      const token = localStorage.getItem("token"); // <-- KUNIN ANG TOKEN
+      const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+      if (!token) {
+        alert("Session expired. Please log in again.");
+        return;
+      }
 
       if ("id" in entry) {
         // UPDATE
@@ -247,7 +257,7 @@ export function SalesReportPage() {
           method: "PATCH", 
           headers: { 
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}` // <-- IPASA ANG TOKEN
+            "Authorization": `Bearer ${token}`
           },
           body: JSON.stringify(payload),
         });
@@ -264,7 +274,7 @@ export function SalesReportPage() {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}` // <-- IPASA ANG TOKEN
+            "Authorization": `Bearer ${token}`
           },
           body: JSON.stringify(payload),
         });
